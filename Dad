@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>父親節體感撈金幣遊戲</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body {
+    margin: 0;
+    background: #87CEEB;
+    font-family: "Microsoft JhengHei", sans-serif;
+    text-align: center;
+    overflow: hidden;
+}
+#gameCanvas {
+    background: #cceeff;
+    display: block;
+    margin: 0 auto;
+}
+#ui {
+    position: absolute;
+    top: 10px;
+    left: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 20px;
+    color: #333;
+}
+button {
+    padding: 10px 20px;
+    font-size: 18px;
+    margin: 5px;
+}
+#charSelect {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(255,255,255,0.9);
+    padding: 20px;
+    border-radius: 10px;
+}
+</style>
+</head>
+<body>
+<div id="ui">
+    <span id="timer">時間：60</span>　
+    <span id="score">金額：$0</span>　
+    <button id="muteBtn">🔊</button>
+</div>
+
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<div id="charSelect">
+    <h2>選擇角色</h2>
+    <button onclick="selectChar('爸爸')">爸爸 - 最強撈金手</button><br>
+    <button onclick="selectChar('媽媽')">媽媽 - 超級理財達人</button><br>
+    <button onclick="selectChar('小女孩')">小女孩 - 速度小旋風</button>
+</div>
+
+<audio id="bgm" loop autoplay>
+    <source src="https://cdn.pixabay.com/download/audio/2023/03/28/audio_8b4841cf38.mp3?filename=fun-happy-kids-145571.mp3" type="audio/mpeg">
+</audio>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.21.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/posenet"></script>
+<script>let canvas = document.getElementById("gameCanvas");
+let ctx = canvas.getContext("2d");
+let score = 0;
+let timeLeft = 60;
+let player = { x: 400, y: 500, size: 50, range: 50, char: "" };
+let objects = [];
+let gameRunning = false;
+let netExtra = 0;
+let video, net;
+
+// 掉落物清單
+const moneyItems = [
+    { type: "coin1", value: 1, color: "#FFD700" },
+    { type: "coin5", value: 5, color: "#DAA520" },
+    { type: "coin10", value: 10, color: "#C0C0C0" },
+    { type: "coin50", value: 50, color: "#B8860B" },
+    { type: "bill100", value: 100, color: "#FF6666" }
+];
+const tools = [
+    { type: "basket", range: 30, color: "#8B4513" },
+    { type: "net", range: 50, color: "#228B22" },
+    { type: "bag", range: 40, color: "#CD853F" },
+    { type: "clock", extraTime: 60, color: "#87CEFA" }
+];
+
+function selectChar(name) {
+    player.char = name;
+    document.getElementById("charSelect").style.display = "none";
+    startGame();
+}
+
+function startGame() {
+    score = 0;
+    timeLeft = 60;
+    player.x = 400;
+    player.range = 50;
+    objects = [];
+    gameRunning = true;
+    setInterval(spawnObject, 800);
+    setInterval(() => { if (timeLeft > 0) timeLeft--; }, 1000);
+    requestAnimationFrame(gameLoop);
+    initCamera();
+}
+
+function spawnObject() {
+    if (!gameRunning) return;
+    let rand = Math.random();
+    if (rand < 0.7) {
+        objects.push({
+            ...moneyItems[Math.floor(Math.random() * moneyItems.length)],
+            x: Math.random() * canvas.width,
+            y: -20,
+            speed: 3
+        });
+    } else {
+        objects.push({
+            ...tools[Math.floor(Math.random() * tools.length)],
+            x: Math.random() * canvas.width,
+            y: -20,
+            speed: 2
+        });
+    }
+}
+
+function drawPlayer() {
+    ctx.fillStyle = "#333";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, player.size, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "#fff";
+    ctx.font = "16px Arial";
+    ctx.fillText(player.char, player.x - 20, player.y + 5);
+}
+
+function drawObjects() {
+    for (let o of objects) {
+        ctx.fillStyle = o.color;
+        ctx.beginPath();
+        ctx.arc(o.x, o.y, 15, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+function updateObjects() {
+    for (let o of objects) {
+        o.y += o.speed;
+        let dist = Math.hypot(o.x - player.x, o.y - player.y);
+        if (dist < player.size + player.range) {
+            if (o.value) score += o.value;
+            if (o.range) player.range += o.range;
+            if (o.extraTime) timeLeft += o.extraTime;
+            objects = objects.filter(item => item !== o);
+        }
+    }
+    objects = objects.filter(o => o.y < canvas.height + 20);
+}
+
+function gameLoop() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (timeLeft <= 0) {
+        gameRunning = false;
+        ctx.fillStyle = "#000";
+        ctx.font = "30px Arial";
+        ctx.fillText("遊戲結束！總金額：" + score + " 元", 200, 300);
+        return;
+    }
+    updateObjects();
+    drawObjects();
+    drawPlayer();
+    document.getElementById("score").textContent = "金額：" + score + " 元";
+    document.getElementById("timer").textContent = "時間：" + timeLeft;
+    requestAnimationFrame(gameLoop);
+}
+
+document.getElementById("muteBtn").onclick = function() {
+    let bgm = document.getElementById("bgm");
+    bgm.muted = !bgm.muted;
+    this.textContent = bgm.muted ? "🔇" : "🔊";
+};
+
+// 體感控制：使用 Posenet 偵測左右移動
+async function initCamera() {
+    video = document.createElement("video");
+    video.width = 640;
+    video.height = 480;
+    video.autoplay = true;
+    await navigator.mediaDevices.getUserMedia({ video: true }).then(stream => {
+        video.srcObject = stream;
+    });
+    net = await posenet.load();
+    detectPose();
+}
+
+async function detectPose() {
+    if (!gameRunning) return;
+    const pose = await net.estimateSinglePose(video, { flipHorizontal: true });
+    let nose = pose.keypoints.find(k => k.part === "nose");
+    if (nose && nose.score > 0.5) {
+        player.x = canvas.width - (nose.position.x / video.width) * canvas.width;
+    }
+    requestAnimationFrame(detectPose);
+}
+</script>
+</body>
+</html>
